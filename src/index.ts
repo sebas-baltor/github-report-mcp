@@ -1,47 +1,96 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import {retrieveChangedFiles} from "./github/retrieve-changed-files.js";
-
+import { retrieveChangedFiles } from "./github/retrieve-changed-files.js";
+import { retrieveLocalChangedFiles } from "./local/local-client.js";
+import { GeneralReportDescriptionTool } from "./lib/const/descriptions.js";
+import { findGitRoot } from "./lib/local/find-repo.js";
+import { getCommitsWithFiles } from "./local/isomorphic-client.js";
+import { tr } from "zod/v4/locales";
 
 // Create server instance
 const server = new McpServer({
-    name: "weather",
-    version: "1.0.0",
-    capabilities: {
-        resources: {},
-        tools: {},
-    },
+  name: "weather",
+  version: "1.0.0",
+  capabilities: {
+    resources: {},
+    tools: {},
+  },
 });
 
 // Register weather tools
 server.tool(
   "generate-report",
-  ` Generate a report bese on github commits and specifically with the changes of each file in the propertie "patch" and with the "commitMessage" and all the changed files. The reports has to have the following structure: 
-  
-    **CHANGELOG :rocket: #UPDATE {UPDATE NUMBER}**
-
-    'A list of changes made in the last update, including new features, bug fixes, and improvements. Each change should be described in a single line with a maximum of 100 characters. The list should be formatted as follows:'
-    :white_check_mark: {CHANGE DESCRIPTION IN UPPERCASE IN SPANISH}
+  ` Generate a report bese on github commits and ${GeneralReportDescriptionTool}
   `,
   {
-    startDate: z.string().describe("Date to start the report from, in ISO format (YYYY-MM-DD)"),
-    untilDate: z.string().optional().describe("Date to end the report at, in ISO format (YYYY-MM-DD) is non required if is not provided set to the actual date in iso format"),
+    startDate: z.string().describe("Date to start the report from, in ISO format (YYYY-MM-DDThh:mm:ss.sssZ)"),
+    untilDate: z.string().optional().describe("Date to end the report at, in ISO format (YYYY-MM-DDThh:mm:ss.sssZ) is non required if is not provided set to the actual date in iso format"),
     branch: z.string().describe("Branch to filter commits by, if not provided all branches will be considered"),
   },
-  async ({ startDate,untilDate,branch }) => {
-    const changedFiles = await retrieveChangedFiles({ startDate,untilDate,branch});
-    
-    return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(changedFiles, null, 2)
-        }
-      ]
-    };
+  async ({ startDate, untilDate, branch }) => {
+    try {
+      const changedFiles = await retrieveChangedFiles({ startDate, untilDate, branch });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(changedFiles, null, 2)
+          }
+        ]
+      };
+    } catch (error: any) {
+      console.error("Error generating report:", error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error generating report: ${error.message}`
+          }
+        ]
+      };
+    }
   }
 );
+
+server.tool(
+  "generate-local-report",
+  ` Generate a report bese on git commits on my local machine only if is not specified that you are going to find this information to github and ${GeneralReportDescriptionTool}`,
+  {
+    startDate: z.string().describe("Date to start the report from, in ISO format (YYYY-MM-DDThh:mm:ss.sssZ:)"),
+    untilDate: z.string().optional().describe("Date to end the report at, in ISO format (YYYY-MM-DDThh:mm:ss.sssZ) is non required if is not provided set to the actual date in iso format"),
+    branch: z.string().describe("Branch to filter commits by, if not provided dont worry to set a value is not necesary just set a simple empty string"),
+    author: z.string().describe("This is a email of the author that wrote the commits in the local stage usually is the same user that is running the mcp server"),
+    dir: z.string().describe("Directory of the git repository, if not provided will use the current directory where the mcp server is running"),
+  },
+  async ({ startDate, untilDate, branch, author, dir }) => {
+    try {
+      const rightDir = findGitRoot(dir);
+      // const { retrieveLocalChangedFiles } = await import("./local/local-client.js");
+      const changedFiles = await getCommitsWithFiles({ startDate, untilDate, branch, author, dir:rightDir });
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(changedFiles, null, 2)
+          }
+        ]
+      };
+    } catch (error: any) {
+      console.error("Error generating local report:", error);
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error generating local report: ${error.message}`
+          }
+        ]
+      };
+    }
+  }
+)
 
 async function main() {
   const transport = new StdioServerTransport();

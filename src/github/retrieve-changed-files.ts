@@ -1,4 +1,5 @@
 import octokit, { login } from '../lib/github/octokit-client.js'
+import { ReportModelContextFormat } from '../types/main.t.js';
 export async function retrieveChangedFiles({startDate,untilDate,branch}:{
     startDate: string,
     untilDate?: string,
@@ -34,11 +35,10 @@ export async function retrieveChangedFiles({startDate,untilDate,branch}:{
                     // changes: file.changes,
                     patch: file.patch,
                     // raw_url: file.raw_url
-    
-                }))
+                } as ReportModelContextFormat))
             })
         }))
-        return relevantFileInformation
+        return relevantFileInformation;
     }catch (error) {
         console.error("Error retrieving changed files:", error);
         return [];
